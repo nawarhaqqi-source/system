@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام توزيع الطلبة على القاعات الامتحانية</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+* { 
+    box-sizing: border-box; 
+}
+        :root {
+            --primary: #4e73df; --success: #1cc88a; --info: #36b9cc; --danger: #e74a3b; 
+            --dark: #2c3e50; --sidebar-width: 260px; --bg: #f8f9fc;
+        }
+       body { 
+    font-family: 'Cairo', sans-serif; 
+    background: var(--bg); 
+    margin: 0; 
+    display: flex; /* كابتن: جعلنا الجسم فليكس لترتيب السايد بار بجانب المحتوى */
+    min-height: 100vh; 
+}
+        
+        .sidebar { 
+    width: var(--sidebar-width); 
+    background: var(--dark); 
+    color: white; 
+    display: flex; 
+    flex-direction: column; 
+    position: fixed; /* يبقى ثابتاً عند التمرير */
+    height: 100%; 
+    right: 0; /* مكانه في اليمين لأننا RTL */
+    z-index: 1000; 
+}
+        .sidebar-header { padding: 25px; text-align: center; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .sidebar-menu { list-style: none; padding: 0; margin: 20px 0; }
+        .menu-item { padding: 15px 25px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: 0.3s; color: rgba(255,255,255,0.7); border-right: 4px solid transparent; }
+        .menu-item:hover, .menu-item.active { background: rgba(255,255,255,0.1); color: white; border-right-color: var(--primary); }
+
+        .main-content {
+    /* كابتن: نستخدم flex-grow ليأخذ كل المساحة المتبقية */
+    flex: 1;
+    
+    /* نترك مساحة للسايد بار الثابت */
+    margin-right: var(--sidebar-width);
+    
+    /* هذا هو السر: العرض يجب أن يكون 100% من المساحة المتاحة */
+    width: 100%;
+    
+    padding: 30px;
+    box-sizing: border-box;
+    
+    /* لضمان عدم ظهور شريط تمرير أفقي إلا عند الضرورة القصوى */
+    overflow-x: hidden; 
+    min-height: 100vh;
+}
+
+/* تعديل إضافي لضمان استجابة الجداول */
+table {
+    width: 100%;
+    margin-top: 15px;
+    table-layout: auto; /* يجعل الجدول يتمدد حسب عرض الصفحة */
+}
+        .page-section { display: none; animation: fadeIn 0.4s ease; }
+        .page-section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; } }
+
+        .card { background: white; border-radius: 15px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); overflow: hidden; margin-bottom: 25px; border: 1px solid #e3e6f0; }
+        .card-header { background: #f8f9fc; padding: 20px; font-weight: bold; color: var(--primary); border-bottom: 1px solid #e3e6f0; display: flex; justify-content: space-between; align-items: center; }
+        .card-body { padding: 25px; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 25px; }
+        .stat-card { background: white; padding: 20px; border-radius: 12px; border-right: 5px solid var(--primary); box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .stat-card.success { border-right-color: var(--success); }
+        .stat-card.info { border-right-color: var(--info); }
+        .stat-label { font-size: 0.8rem; color: #858796; font-weight: bold; text-transform: uppercase; }
+        .stat-value { font-size: 1.5rem; font-weight: bold; color: #5a5c69; }
+
+        .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .filter-bar { background: #f0f2f7; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; border: 1px solid #e3e6f0; }
+        
+        .input-field { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 0.85rem; font-weight: bold; color: var(--dark); }
+        input, select { padding: 10px; border: 1px solid #d1d3e2; border-radius: 8px; font-family: 'Cairo'; outline: none; font-size: 0.8rem; }
+        
+        .btn { padding: 12px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; color: white; display: flex; align-items: center; gap: 8px; font-family: 'Cairo'; transition: 0.2s; font-size: 0.9rem; }
+        .btn-primary { background: var(--primary); }
+        .btn-excel { background: #1d6f42; }
+        .btn-danger { background: var(--danger); }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { background: #f8f9fc; color: var(--primary); padding: 15px; text-align: right; border-bottom: 2px solid #e3e6f0; }
+        td { padding: 12px; border-bottom: 1px solid #e3e6f0; }
+        
+        .editable-cell { padding: 5px; border-radius: 4px; border: 1px transparent; transition: 0.3s; width: 80%; }
+        .editable-cell:focus { border-color: var(--primary); background: #fff; outline: none; box-shadow: 0 0 5px rgba(78,115,223,0.2); }
+
+        .report-hall-card { 
+            margin: 20px auto; 
+            padding: 10mm; 
+            background: #fff; 
+            width: 210mm; 
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+        }
+
+        .attendance-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .attendance-table th, .attendance-table td { border: 1px solid #000; padding: 5px; text-align: center; font-size: 14px; }
+        .attendance-table th { background: #eee !important; }
+
+        .print-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .print-table td { padding: 1px; }
+
+        .main-print-wrapper { width: 100%; border-collapse: collapse; }
+        .main-print-wrapper thead { display: table-header-group; }
+        
+        .report-header { text-align: center; padding-bottom: 10px; border-bottom: 4px solid #000; margin-bottom: 8px; }
+        
+        .student-box { 
+            border: 1px solid #000; 
+            padding: 4px; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            text-align: center; 
+            background: #fff;
+            overflow: hidden;
+            height: 28mm;
+            position: relative;
+            margin: 2;
+        }
+        .student-box .s-seq { 
+            position: absolute; 
+            top: 2px; 
+            right: 4px; 
+            font-size: 10px; 
+            font-weight: bold; 
+            color: #555;
+            border: 1px solid #ccc;
+            padding: 0 4px;
+            border-radius: 3px;
+page-break-inside: avoid; 
+    break-inside: avoid;
+        }
+        .student-box .s-name { font-size: 14px; font-weight: 700; border-bottom: 1px solid #eee; width: 100%; margin-bottom: 4px; white-space: normal; line-height: 1.2; }
+        .student-box .s-detail { font-size: 11px; color: #000; line-height: 1.5; font-weight: 600; }
+
+        .footer-signatures { margin-top: 60px; display: grid; grid-template-columns: 1fr 1fr; gap: 50px; text-align: center; font-weight: bold; }
+        .sig-box { border-top: 1px dashed #000; padding-top: 10px; margin-top: 40px; }
+
+        .column-config-card { background: #fff; border: 1px solid #e3e6f0; border-radius: 10px; padding: 15px; margin-bottom: 15px; }
+        .remaining-badge { font-size: 0.65rem; background: var(--info); color: white; padding: 1px 5px; border-radius: 4px; display: inline-block; }
+
+        .dept-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #eee; }
+        .exclude-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; margin-bottom: 8px; align-items: center; }
+
+/* قسم الطباعة المعدل كابتن */
+        @media print {
+            @page { size: A4; margin: 5mm; } 
+            body { background: #fff; margin: 0; padding: 0; }
+            
+            /* تكرار ترويسة الجدول في كل صفحة */
+            thead { display: table-header-group; } 
+            tfoot { display: table-footer-group; }
+
+            .sidebar, .btn, .controls, .card-header, #seatingControls, .fa-trash, .btn-excel, .stats-grid, .dept-list-container, #excludeCard, .action-buttons-top, .filter-bar { 
+                display: none !important; 
+            }
+            
+            .main-content { margin: 0 !important; padding: 0 !important; width: 100%; }
+            
+            .report-hall-card { 
+                margin: 0 !important; 
+                border: none !important; 
+                width: 100% !important; 
+                height: auto;
+                page-break-after: always; 
+                page-break-inside: auto;
+                padding: 5mm !important;
+            }
+            
+            .main-print-wrapper { page-break-inside: auto; }
+            .main-print-wrapper tr { page-break-inside: avoid; page-break-after: auto; }
+            
+            /* لضمان عدم انكسار التوقيع في نهاية الصفحة */
+            .footer-signatures { 
+                page-break-inside: avoid; 
+                display: grid; 
+                grid-template-columns: 1fr 1fr; 
+                margin-top: 30px;
+            }
+        }
+
+        .action-buttons-top {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+    </style>
+</head>
+<body>
+<div id="loginOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--dark); z-index: 9999; display: flex; justify-content: center; align-items: center; transition: 0.5s;">
+    <div class="card" style="width: 350px; text-align: center; padding: 20px;">
+        <div class="card-header" style="justify-content: center;">
+            <h3><i class="fas fa-lock"></i> الدخول للنظام</h3>
+        </div>
+        <div class="card-body">
+            <p style="font-size: 0.9rem; color: #666;">يرجى إدخال الرقم السري للمتابعة </p>
+            <input type="password" id="adminPass" placeholder="الرقم السري" style="width: 100%; padding: 12px; margin-bottom: 15px; text-align: center; font-size: 1.2rem;">
+            <button class="btn btn-primary" onclick="checkPassword()" style="width: 100%; justify-content: center;">دخول</button>
+            <div id="loginMsg" style="color: var(--danger); margin-top: 10px; font-weight: bold; display: none;">الرمز غير صحيح!</div>
+        </div>
+    </div>
+</div>
+<script>
+    // 1. تعريف الرابط السحابي - استخدم الرابط الأحدث دائماً
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby5Kl1841QT8j913hx8UojQm2ZbpB8fjeOadBkAxYHWQqBFz1QX-70WN-lrp_NvLSh6/exec";
+
+    // دالة لتوليد أو جلب توكن الجهاز 
+    function getDeviceToken() {
+        let token = localStorage.getItem('device_fingerprint');
+        if (!token) {
+            token = 'cap-' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+            localStorage.setItem('device_fingerprint', token);
+        }
+        return token;
+    }
+
+    async function checkPassword() {
+        const passwordInput = document.getElementById('adminPass').value;
+        const overlay = document.getElementById('loginOverlay');
+        const msg = document.getElementById('loginMsg');
+        const loginBtn = document.querySelector('button[onclick="checkPassword()"]');
+
+        if (!passwordInput) return;
+
+        msg.style.display = 'block';
+        msg.style.color = '#36b9cc';
+        msg.innerText = "جاري التحقق من هوية الجهاز...";
+        if(loginBtn) loginBtn.disabled = true;
+
+        try {
+            // كابتن: أزلنا no-cors لنستطيع قراءة النتيجة
+            const response = await fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: "verify_password",
+                    password: passwordInput,
+                    token: getDeviceToken()
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.status === "success") {
+                sessionStorage.setItem('isLoggedIn', 'true');
+                msg.style.color = '#1cc88a';
+                msg.innerText = "تم التحقق بنجاح!";
+                overlay.style.opacity = '0';
+                setTimeout(() => { overlay.style.display = 'none'; }, 500);
+            } 
+            else if (result.status === "device_locked") {
+                msg.style.color = '#f6c23e';
+                msg.innerText = "هذا الرمز مقفل على جهاز آخر!";
+                if(loginBtn) loginBtn.disabled = false;
+            }
+            else {
+                msg.style.color = '#e74a3b';
+                msg.innerText = "كلمة السر غير صحيحة!";
+                document.getElementById('adminPass').value = "";
+                if(loginBtn) loginBtn.disabled = false;
+            }
+        } catch (error) {
+            console.error("Cloud Error:", error);
+            msg.style.color = '#e74a3b';
+            msg.innerText = "خطأ في الاتصال بالسحابة";
+            if(loginBtn) loginBtn.disabled = false;
+        }
+    }
+
+    // بقية دوام النظام (إدارة الطلاب والقاعات...)
+    // تأكد من إغلاق دالة updateRemainingCounts بشكل صحيح
+    function updateRemainingCounts() {
+        // ... كود الدالة الخاص بك ...
+        // تأكد من وجود قوس الإغلاق } هنا
+    }
+</script> 
+
+
+
+<div class="sidebar">
+        <div class="sidebar-header"><h3><i class="fas fa-university"></i> نظام توزيع الطلبة </h3></div>
+        <ul class="sidebar-menu">
+            <li class="menu-item active" onclick="showSection('studentsSection', this)"><i class="fas fa-users"></i> إدارة الطلاب</li>
+            <li class="menu-item" onclick="showSection('hallsSection', this)"><i class="fas fa-door-open"></i> إدارة القاعات</li>
+            <li class="menu-item" onclick="showSection('statsSection', this)"><i class="fas fa-chart-pie"></i> الإحصائيات العامة</li>
+            <li class="menu-item" onclick="showSection('seatingSection', this)"><i class="fas fa-th"></i> تخطيط المقاعد</li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div id="studentsSection" class="page-section active">
+            <div class="card">
+                <div class="card-header">إضافة طالب جديد <span id="stdCountText">العدد: 0</span></div>
+                <div class="card-body">
+                    <div class="controls">
+                        <div class="input-field"><label>الاسم الثلاثي</label><input type="text" id="sName"></div>
+                        <div class="input-field"><label>القسم</label><select id="sDept"></select></div>
+                        <div class="input-field"><label>المرحلة</label><select id="sStage">
+                            <option>الأولى</option><option>الثانية</option><option>الثالثة</option><option>الرابعة</option><option>الخامسة</option>
+                        </select></div>
+                    </div>
+                    <div style="display:flex; gap:10px; flex-wrap: wrap; margin-bottom: 25px;">
+                        <button class="btn btn-primary" onclick="addStudent()">إضافة يدوي</button>
+                        <button class="btn btn-danger" onclick="addNewDept()">إضافة قسم</button>
+                        <button class="btn btn-excel" onclick="document.getElementById('excelInput').click()">
+                            <i class="fas fa-file-excel"></i> استيراد من إكسل
+                        </button>
+                        <button class="btn btn-danger" onclick="clearAllStudents()" style="background-color: #c0392b;">
+                            <i class="fas fa-trash-alt"></i> حذف كافة الطلبة
+                        </button>
+                        <input type="file" id="excelInput" style="display:none" accept=".xlsx, .xls" onchange="importExcel(this)">
+                    </div>
+
+                    <div class="filter-bar">
+                        <div class="input-field">
+                            <label><i class="fas fa-search"></i> بحث بالاسم:</label>
+                            <input type="text" id="searchName" placeholder="اكتب اسم الطالب..." oninput="renderStudents()">
+                        </div>
+                        <div class="input-field">
+                            <label><i class="fas fa-filter"></i> فلتر بالقسم:</label>
+                            <select id="filterDept" onchange="renderStudents()">
+                                <option value="all">كل الأقسام</option>
+                            </select>
+                        </div>
+                        <div class="input-field">
+                            <label><i class="fas fa-layer-group"></i> فلتر بالمرحلة:</label>
+                            <select id="filterStage" onchange="renderStudents()">
+                                <option value="all">كل المراحل</option>
+                                <option>الأولى</option><option>الثانية</option><option>الثالثة</option><option>الرابعة</option><option>الخامسة</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <table><thead><tr><th>الاسم</th><th>القسم</th><th>المرحلة</th><th>حذف</th></tr></thead><tbody id="stdTableBody"></tbody></table>
+                    
+                    <div class="dept-list-container" style="margin-top: 40px; border-top: 2px dashed #eee; padding-top: 20px;">
+                        <label>إدارة الأقسام المتوفرة في المنظومة:</label>
+                        <div id="deptList" style="max-height: 150px; overflow-y: auto; margin-top:10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="hallsSection" class="page-section">
+            <div class="stats-grid">
+                <div class="stat-card info">
+                    <div class="stat-label">إجمالي السعة الكلية</div>
+                    <div class="stat-value" id="totalCapacity">0</div>
+                </div>
+                <div class="stat-card success">
+                    <div class="stat-label">إجمالي عدد الطلاب</div>
+                    <div class="stat-value" id="totalStudentsStat">0</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">إدارة القاعات وتعديل البيانات</div>
+                <div class="card-body">
+                    <div class="controls">
+                        <input type="text" id="hName" placeholder="اسم القاعة">
+                        <input type="number" id="hCols" placeholder="الأعمدة" value="4">
+                        <input type="number" id="hRows" placeholder="عدد الطلبة في العمود الواحد" value="10">
+                    </div>
+                    <button class="btn btn-primary" onclick="addHall()">إضافة قاعة</button>
+                    <table id="hallTable">
+                        <thead><tr><th>اسم القاعة</th><th>الأعمدة</th><th>عدد الطلبة في العمود الواحد</th><th>السعة</th><th>استثناء</th><th>حذف</th></tr></thead>
+                        <tbody id="hallTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="statsSection" class="page-section">
+    <div class="card">
+        <div class="card-header">
+            <span><i class="fas fa-chart-line"></i> تحليل توزيع الطلاب حسب الأقسام والمراحل</span>
+        </div>
+        <div class="card-body">
+            <div class="filter-bar" style="background: #eef2f7; border-right: 5px solid var(--primary); margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 15px; border-radius: 8px;">
+                
+                <div class="input-field">
+                    <label><i class="fas fa-layer-group"></i> استثناء مرحلة محددة (من الكل):</label>
+                    <select id="statExcludeStage" onchange="renderStats()" style="width: 100%; padding: 8px; border-radius: 5px; border: 1px solid #d1d3e2;">
+                        <option value="">لا يوجد استثناء للمراحل</option>
+                        <option>الأولى</option>
+                        <option>الثانية</option>
+                        <option>الثالثة</option>
+                        <option>الرابعة</option>
+                        <option>الخامسة</option>
+                    </select>
+                </div>
+
+                <div class="input-field">
+                    <label><i class="fas fa-check-double"></i> اختر الأقسام المراد استثناؤها بالكامل:</label>
+                    <div id="statDeptsChecklist" style="display: flex; flex-wrap: wrap; gap: 10px; background: white; padding: 10px; border-radius: 8px; border: 1px solid #d1d3e2; max-height: 100px; overflow-y: auto;">
+                        </div>
+                </div>
+            </div>
+
+            <div id="statsContainer"></div>
+        </div>
+    </div>
+</div>
+
+        <div id="seatingSection" class="page-section">
+            <div class="action-buttons-top">
+                <button class="btn btn-primary" onclick="generateSeating()">
+                    <i class="fas fa-magic"></i> توليد المخططات والجداول
+                </button>
+                <button class="btn" onclick="window.print()" style="background:var(--success);">
+                    <i class="fas fa-print"></i> طباعة النتائج النهائية
+                </button>
+            </div>
+
+            <div class="card" id="excludeCard">
+                <div class="card-header">إعدادات الاستثناءات الديناميكية </div>
+                <div class="card-body">
+                    <div class="input-field" style="max-width: 250px; margin-bottom: 20px;">
+                        <label> حدد عدد الاستثناءات المطلوبة:</label>
+                        <input type="number" id="excludeCount" min="0" max="20" value="0" oninput="initExcludeRows()">
+                    </div>
+                    <div id="excludeWrapper"></div>
+                </div>
+            </div>
+            <div id="seatingControls"></div>
+            <div id="seatingResult"></div>
+        </div>
+    </div>
+
+    <script>
+        let students = JSON.parse(localStorage.getItem('cap_std')) || [];
+        let halls = JSON.parse(localStorage.getItem('cap_halls')) || [];
+        let depts = JSON.parse(localStorage.getItem('cap_depts')) || [];
+        const stages = ["الأولى", "الثانية", "الثالثة", "الرابعة", "الخامسة"];
+
+        window.onload = () => renderAll();
+
+        function showSection(id, el) {
+            document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            el.classList.add('active');
+            if(id === 'seatingSection') {
+                initExcludeRows();
+                renderSeatingControls();
+            }
+            if(id === 'statsSection') renderStats();
+        }
+
+        function initExcludeRows() {
+            const wrapper = document.getElementById('excludeWrapper');
+            const countInput = document.getElementById('excludeCount');
+            if(!wrapper || !countInput) return;
+            let count = parseInt(countInput.value) || 0;
+            let html = "";
+            for(let i=1; i<=count; i++) {
+                html += `
+                <div class="exclude-row">
+                    <div class="input-field">
+                        <label>استثناء ${i}: المرحلة</label>
+                        <select class="ex-stage" onchange="updateRemainingCounts()">
+                            <option value="">لا يوجد</option>
+                            ${stages.map(st => `<option value="${st}">${st}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="input-field">
+                        <label>من القسم</label>
+                        <select class="ex-dept" onchange="updateRemainingCounts()">
+                            <option value="">كل الأقسام</option>
+                            ${depts.map(d => `<option value="${d}">${d}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>`;
+            }
+            wrapper.innerHTML = html;
+            updateRemainingCounts();
+        }
+
+        function renderDepts() { 
+            const s = document.getElementById('sDept'); 
+            const f = document.getElementById('filterDept');
+            if(s) s.innerHTML = depts.map(d => `<option value="${d}">${d}</option>`).join(''); 
+            if(f) f.innerHTML = '<option value="all">كل الأقسام</option>' + depts.map(d => `<option value="${d}">${d}</option>`).join('');
+            const list = document.getElementById('deptList');
+            if(list) {
+                list.innerHTML = depts.map((d, index) => `
+                    <div class="dept-item">
+                        <span>${d}</span>
+                        <i class="fas fa-times" style="color:red; cursor:pointer" onclick="deleteDept(${index})"></i>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function addNewDept() { 
+            const d = prompt(" اسم القسم الجديد:"); 
+            if(d && !depts.includes(d)) { 
+                depts.push(d); 
+                localStorage.setItem('cap_depts', JSON.stringify(depts)); 
+                renderDepts(); 
+            } 
+        }
+
+        function deleteDept(index) {
+            if(confirm(" هل أنت متأكد؟")) {
+                depts.splice(index, 1);
+                localStorage.setItem('cap_depts', JSON.stringify(depts));
+                renderDepts();
+            }
+        }
+        
+        function addStudent() {
+            const name = document.getElementById('sName').value;
+            if(!name) return;
+            students.push({ id: Date.now(), name, dept: document.getElementById('sDept').value, stage: document.getElementById('sStage').value });
+            saveAndRender();
+            document.getElementById('sName').value = "";
+        }
+
+        function clearAllStudents() {
+            if(confirm("حذف كافة البيانات؟")) {
+                students = [];
+                saveAndRender();
+            }
+        }
+function importExcel(input) {
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+        
+        json.forEach(row => {
+            const rowDept = row['القسم'] || row['Dept'];
+
+            // تحديث مصفوفة الأقسام إذا كان القسم جديداً
+            if (rowDept && !depts.includes(rowDept)) {
+                depts.push(rowDept);
+            }
+
+            students.push({
+                id: Date.now() + Math.random(),
+                name: row['الاسم'] || row['Name'],
+                dept: rowDept || depts[0], // القيمة الافتراضية إذا كان الحقل فارغاً
+                stage: row['المرحلة'] || row['Stage'] || "الأولى"
+            });
+        });
+
+        // كابتن: يجب حفظ الأقسام الجديدة في localStorage لتظل موجودة بعد التحديث
+        localStorage.setItem('cap_depts', JSON.stringify(depts));
+        
+        // تحديث كل القوائم المنسدلة (Selects) والإحصائيات
+        renderDepts(); 
+        saveAndRender();
+        
+        input.value = "";
+        alert("تم استيراد البيانات وتحديث الأقسام تلقائياً يا كابتن!");
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+        function renderStudents() {
+            const b = document.getElementById('stdTableBody'); if(!b) return;
+            const q = document.getElementById('searchName').value.toLowerCase();
+            const fDept = document.getElementById('filterDept').value;
+            const fStage = document.getElementById('filterStage').value;
+            let filtered = students.filter(s => {
+                const matchName = s.name.toLowerCase().includes(q);
+                const matchDept = fDept === 'all' || s.dept === fDept;
+                const matchStage = fStage === 'all' || s.stage === fStage;
+                return matchName && matchDept && matchStage;
+            });
+            b.innerHTML = filtered.map(s => `<tr><td>${s.name}</td><td>${s.dept}</td><td>${s.stage}</td><td><i class="fas fa-trash" style="color:red;cursor:pointer" onclick="deleteItem('std', ${s.id})"></i></td></tr>`).join('');
+            document.getElementById('stdCountText').innerText = "العدد: " + filtered.length;
+        }
+
+        function addHall() {
+            const name = document.getElementById('hName').value, c = parseInt(document.getElementById('hCols').value), r = parseInt(document.getElementById('hRows').value);
+            if(name) { halls.push({id: Date.now(), name, cols: c, rows: r, excluded: false}); saveAndRender(); }
+        }
+
+        function renderHalls() {
+            const b = document.getElementById('hallTableBody'); if(!b) return;
+            let totalCap = 0;
+            b.innerHTML = halls.map((h, index) => {
+                const cap = h.cols * h.rows;
+                totalCap += (h.excluded ? 0 : cap);
+                return `<tr>
+                    <td><input type="text" class="editable-cell" value="${h.name}" onchange="editHall(${index}, 'name', this.value)"></td>
+                    <td><input type="number" class="editable-cell" value="${h.cols}" onchange="editHall(${index}, 'cols', this.value)"></td>
+                    <td><input type="number" class="editable-cell" value="${h.rows}" onchange="editHall(${index}, 'rows', this.value)"></td>
+                    <td><strong>${cap}</strong></td>
+                    <td><input type="checkbox" ${h.excluded ? 'checked' : ''} onchange="toggleHallExclude(${index})"></td>
+                    <td><i class="fas fa-trash" style="color:red;cursor:pointer" onclick="deleteItem('hall', ${h.id})"></i></td>
+                </tr>`;
+            }).join('');
+            document.getElementById('totalCapacity').innerText = totalCap;
+            document.getElementById('totalStudentsStat').innerText = students.length;
+        }
+
+        function toggleHallExclude(index) {
+            halls[index].excluded = !halls[index].excluded;
+            localStorage.setItem('cap_halls', JSON.stringify(halls));
+            renderHalls();
+        }
+
+        function editHall(index, field, value) {
+            halls[index][field] = field === 'name' ? value : parseInt(value);
+            localStorage.setItem('cap_halls', JSON.stringify(halls));
+            renderHalls(); 
+        }
+
+        function renderStats() {
+    const container = document.getElementById('statsContainer');
+    const exStage = document.getElementById('statExcludeStage').value;
+    const checklist = document.getElementById('statDeptsChecklist');
+    
+    // 1. توليد قائمة الأقسام مع Checkboxes إذا كانت الحاوية فارغة
+    if (checklist && checklist.innerHTML.trim() === "") {
+        checklist.innerHTML = depts.map(d => `
+            <label style="font-weight: normal; cursor: pointer; display: flex; align-items: center; gap: 5px; background: #f8f9fc; padding: 2px 8px; border-radius: 5px; border: 1px solid #eee;">
+                <input type="checkbox" class="ex-dept-check" value="${d}" onchange="renderStats()"> ${d}
+            </label>
+        `).join('');
+    }
+
+    // 2. الحصول على قائمة الأقسام المختارة للاستثناء
+    const excludedDepts = Array.from(document.querySelectorAll('.ex-dept-check:checked')).map(cb => cb.value);
+
+    let html = `<table><thead><tr><th>القسم</th><th>الأولى</th><th>الثانية</th><th>الثالثة</th><th>الرابعة</th><th>الخامسة</th><th>الإجمالي الصافي</th></tr></thead><tbody>`;
+    let grandTotal = 0;
+
+    depts.forEach(dept => {
+        let deptTotal = 0;
+        const isDeptExcluded = excludedDepts.includes(dept);
+        
+        let rowStyle = isDeptExcluded ? 'background: #fff5f5; color: #a0aec0;' : '';
+        html += `<tr style="${rowStyle}"><td><strong>${dept} ${isDeptExcluded ? '<small>(مستثنى)</small>' : ''}</strong></td>`;
+        
+        stages.forEach(stage => {
+            const count = students.filter(s => s.dept === dept && s.stage === stage).length;
+            
+            // شرط الاستثناء: إما القسم مستثنى بالكامل أو المرحلة مستثناة من الكل
+            const isExcluded = isDeptExcluded || (stage === exStage);
+
+            if (isExcluded) {
+                html += `<td style="color: #cbd5e0; text-decoration: line-through; font-size: 0.8rem;">${count}</td>`;
+            } else {
+                deptTotal += count;
+                html += `<td>${count}</td>`;
+            }
+        });
+        
+        grandTotal += deptTotal;
+        html += `<td style="background: #eef2f7; font-weight: bold; color: ${isDeptExcluded ? '#cbd5e0' : 'var(--primary)'};">${deptTotal}</td></tr>`;
+    });
+    
+    html += `</tbody><tfoot>
+                <tr style="background: var(--dark); color: white; font-weight: bold;">
+                    <td colspan="6" style="text-align: left; padding: 15px;">إجمالي عدد الطلاب المشمولين بالتوزيع الفعلي:</td>
+                    <td style="font-size: 1.3rem; color: #1cc88a;">${grandTotal}</td>
+                </tr>
+            </tfoot></table>`;
+    
+    container.innerHTML = html;
+}
+
+        function deleteItem(type, id) {
+            if(type==='std') students = students.filter(x => x.id !== id); else halls = halls.filter(x => x.id !== id);
+            saveAndRender();
+        }
+
+        function saveAndRender() {
+    localStorage.setItem('cap_std', JSON.stringify(students));
+    localStorage.setItem('cap_halls', JSON.stringify(halls));
+    localStorage.setItem('cap_depts', JSON.stringify(depts)); // السطر السحري المفقود
+    renderAll();
+}
+
+        function renderAll() { renderDepts(); renderStudents(); renderHalls(); }
+
+        function getActiveExclusions() {
+            const exStages = document.querySelectorAll('.ex-stage');
+            const exDepts = document.querySelectorAll('.ex-dept');
+            let list = [];
+            exStages.forEach((sel, i) => { if(sel.value) list.push({ stage: sel.value, dept: exDepts[i].value }); });
+            return list;
+        }
+
+        function updateRemainingCounts() {
+    // 1. جلب نسخة نظيفة من الطلاب
+    let tempPool = JSON.parse(JSON.stringify(students));
+
+    // 2. جلب الاستثناءات من صفحة الإحصائيات
+    const excludedDeptNames = Array.from(document.querySelectorAll('.ex-dept-check:checked')).map(cb => cb.value);
+    const globalExStage = document.getElementById('statExcludeStage')?.value || "";
+
+    // 3. التصفية الأولية
+    tempPool = tempPool.filter(s => {
+        const isDeptExcluded = excludedDeptNames.includes(s.dept);
+        const isStageExcluded = (globalExStage !== "" && s.stage === globalExStage);
+        return !isDeptExcluded && !isStageExcluded;
+    });
+
+    // 4. تطبيق الاستثناءات الديناميكية (تأكد أن دالة getActiveExclusions معرفة)
+    const activeExclusions = typeof getActiveExclusions === 'function' ? getActiveExclusions() : [];
+    if(activeExclusions.length > 0) {
+        tempPool = tempPool.filter(s => !activeExclusions.some(ex => s.stage === ex.stage && (ex.dept === "" || s.dept === ex.dept)));
+    }
+
+    // 5. كابتن: جلب index أول قاعة مفعلة مرة واحدة فقط لتحسين الأداء
+    const firstActiveHallIdx = halls.findIndex(h => !h.excluded);
+
+    halls.forEach((hall, hIdx) => {
+        if(hall.excluded) return;
+
+        for(let c=1; c<=hall.cols; c++) {
+            const currentSelect = document.querySelector(`.col-select-hall-${hIdx}[data-col="${c}"]`);
+            if(!currentSelect) continue;
+
+            // كابتن: مزامنة القاعات مع القاعة الأولى تلقائياً
+            if(hIdx !== firstActiveHallIdx && firstActiveHallIdx !== -1) {
+                const masterSelect = document.querySelector(`.col-select-hall-${firstActiveHallIdx}[data-col="${c}"]`);
+                if(masterSelect) currentSelect.value = masterSelect.value;
+            }
+
+            const stageVal = currentSelect.value;
+            const badge = document.getElementById(`rem-${hIdx}-${c}`);
+
+            if(stageVal) {
+                let countInCol = 0;
+                // سحب الطلاب الذين تم حجز مقاعدهم فعلياً في هذا العمود
+                tempPool = tempPool.filter(s => {
+                    if(s.stage === stageVal && countInCol < hall.rows) { 
+                        countInCol++; 
+                        return false; // يخرج من الـ Pool لأنه "جلس" على مقعد
+                    }
+                    return true;
+                });
+
+                // تحديث رقم المتبقي للمرحلة
+                const rem = tempPool.filter(x => x.stage === stageVal).length;
+                if(badge) { 
+                    badge.innerText = `${rem} متبقي`; 
+                    badge.className = rem === 0 ? "remaining-badge bg-danger" : "remaining-badge bg-info";
+                    badge.style.display = 'inline-block'; 
+                }
+            } else if(badge) {
+                badge.style.display = 'none';
+            }
+        }
+    });
+}
+
+        function renderSeatingControls() {
+            const container = document.getElementById('seatingControls');
+            if (halls.length === 0) { container.innerHTML = "يرجى إضافة قاعات."; return; }
+            let html = `<div class="card"><div class="card-header">تخصيص المراحل</div><div class="card-body">`;
+            let firstNonExcludedIdx = halls.findIndex(h => !h.excluded);
+            halls.forEach((hall, hIdx) => {
+                if(hall.excluded) return;
+                const isFirst = hIdx === firstNonExcludedIdx;
+                html += `<div class="column-config-card"><strong>قاعة: ${hall.name}</strong><div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:10px; margin-top:10px;">`;
+                for(let c=1; c<=hall.cols; c++) {
+                    html += `<div style="border:1px solid #eee; padding:10px; border-radius:8px;">
+                        <label>العمود ${c} <span id="rem-${hIdx}-${c}" class="remaining-badge" style="display:none;"></span></label>
+                        <select class="col-select-hall-${hIdx}" data-hall="${hIdx}" data-col="${c}" ${!isFirst ? 'disabled' : ''} onchange="updateRemainingCounts()">
+                            <option value="">-- المرحلة --</option>
+                            ${stages.map(s => `<option value="${s}">${s}</option>`).join('')}
+                        </select>
+                    </div>`;
+                }
+                html += `</div></div>`;
+            });
+            container.innerHTML = html + `</div></div>`;
+            updateRemainingCounts();
+        }
+
+     function generateSeating() {
+    const resultDiv = document.getElementById('seatingResult');
+    resultDiv.innerHTML = ""; // تنظيف النتائج السابقة
+    
+    // 1. كابتن: جلب الأقسام المستثناة من صفحة الإحصائيات (Checkboxes)
+    const excludedDeptCheckboxes = document.querySelectorAll('.ex-dept-check:checked');
+    const excludedDeptNames = Array.from(excludedDeptCheckboxes).map(cb => cb.value);
+    
+    // 2. جلب استثناء المرحلة العام من الإحصائيات
+    const globalExStage = document.getElementById('statExcludeStage') ? document.getElementById('statExcludeStage').value : "";
+
+    let sortedPool = JSON.parse(JSON.stringify(students));
+
+    // 3. الفلترة الجوهرية: استبعاد طلاب الأقسام والمراحل المحددة في الإحصائيات
+    sortedPool = sortedPool.filter(s => {
+        const isDeptExcluded = excludedDeptNames.includes(s.dept);
+        const isStageExcluded = (globalExStage !== "" && s.stage === globalExStage);
+        return !isDeptExcluded && !isStageExcluded;
+    });
+
+    // ترتيب الطلاب المتبقين: قسم ثم اسم
+    sortedPool.sort((a, b) => a.dept !== b.dept ? a.dept.localeCompare(b.dept, 'ar') : a.name.localeCompare(b.name, 'ar'));
+    
+    // 4. تطبيق الاستثناءات الديناميكية الإضافية (إن وجدت في صفحة التخطيط)
+    const activeExclusions = getActiveExclusions();
+    if(activeExclusions.length > 0) {
+        sortedPool = sortedPool.filter(s => !activeExclusions.some(ex => s.stage === ex.stage && (ex.dept === "" || s.dept === ex.dept)));
+    }
+    halls.forEach((hall, hIdx) => {
+        if(hall.excluded) return;
+        
+        let firstNonExcludedIdx = halls.findIndex(h => !h.excluded);
+        let colConfigs = [];
+        for(let c=1; c<=hall.cols; c++) {
+            const el = document.querySelector(`.col-select-hall-${firstNonExcludedIdx}[data-col="${c}"]`);
+            colConfigs.push(el ? el.value : "");
+        }
+
+        let seats = Array.from({ length: hall.rows }, () => Array(hall.cols).fill(null));
+        let hallStudentsList = [];
+        let seq = 1;
+
+        // منطق التوزيع
+        for(let c=0; c<hall.cols; c++) {
+            let targetStage = colConfigs[c];
+            if(!targetStage) continue;
+            for(let r=0; r<hall.rows; r++) {
+                let idx = sortedPool.findIndex(s => s.stage === targetStage);
+                if(idx !== -1) {
+                    let s = sortedPool.splice(idx, 1)[0];
+                    s.seq = seq++;
+                    seats[r][c] = s;
+                    hallStudentsList.push(s);
+                }
+            }
+        }
+
+      // كابتن: هذا هو الشرط الجوهري - إذا لم يوجد طلاب في هذه القاعة، لا ترسم أي شيء (لا عنوان ولا جدول)
+        if (hallStudentsList.length === 0) return;
+
+        let card = document.createElement('div');
+        card.className = "report-hall-card";
+        
+        // --- 1. بناء مخطط التوزيع (العنوان متكرر - لا تواقيع) كابتن ---
+        let html = `
+            <table class="main-print-wrapper" style="width:100%; border-collapse: collapse; page-break-after: always;">
+                <thead>
+                    <tr>
+                        <th style="padding:0; font-weight:normal;">
+                            <div class="report-header">
+                                <h2>توزيع الطلبة على القاعة الامتحانية رقم: ${hall.name}</h2>
+                                <p style="margin: 5px 0 10px 0; font-size: 14px;">إجمالي الطلاب: ${hallStudentsList.length} </p>
+                            </div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="padding:0;">
+                            <table class="print-table">`;
+
+        for(let r=0; r<hall.rows; r++) {
+            html += "<tr>";
+            for(let c=0; c<hall.cols; c++) {
+                let s = seats[r][c];
+                html += `<td>${s ? `
+                    <div class="student-box">
+                        <span class="s-seq">${s.seq}</span>
+                        <div class="s-name">${s.name}</div>
+                        <div class="s-detail">${s.dept}<br>${s.stage}</div>
+                    </div>` : `<div class="student-box" style="border-style:dashed; opacity:0.3"></div>`}</td>`;
+            }
+            html += "</tr>";
+        }
+        html += `</table></td></tr></tbody></table>`;
+
+        // --- 2. بناء سجل الحضور (يظهر فقط لوجود بيانات) ---
+        html += `
+            <table class="attendance-table" style="width:100%; border-collapse: collapse;">
+                <thead>
+                    <tr>
+                        <th colspan="5" style="background:#fff !important; border:none; padding-bottom:10px;">
+                            <div class="report-header" style="border-bottom:none; margin-bottom:0;">
+                                <h2 style="margin:0;">سجل حضور قاعة: ${hall.name}</h2>
+                            </div>
+                        </th>
+                    </tr>
+                    <tr>
+                        <th>ت</th>
+                        <th>اسم الطالب</th>
+                        <th>القسم</th>
+                        <th>المرحلة</th>
+                        <th style="width:150px">التوقيع</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+        hallStudentsList.forEach(s => {
+            html += `<tr>
+                        <td>${s.seq}</td>
+                        <td>${s.name}</td>
+                        <td>${s.dept}</td>
+                        <td>${s.stage}</td>
+                        <td></td>
+                    </tr>`;
+        });
+
+        html += `</tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="5" style="border:none;">
+                            <div class="footer-signatures" style="margin-top:20px;">
+                                <div><div class="sig-box">توقيع مسؤول القاعة</div></div>
+                                <div><div class="sig-box">توقيع اللجنة الامتحانية</div></div>
+                            </div>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>`;
+        
+        card.innerHTML = html;
+        resultDiv.appendChild(card);
+    });
+}
+    </script>
+</body>
+</html>
